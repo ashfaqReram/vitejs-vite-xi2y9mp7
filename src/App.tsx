@@ -115,49 +115,93 @@ export default function App() {
       });
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const baseUrl = "https:" + "//generativelanguage.googleapis.com/v1beta/";
+
+    // 1. Ask Google ListModels which models are active for this API key
+    let candidateModels = [
+      "models/gemini-3-flash-preview",
+      "models/gemini-2.5-flash-lite",
+      "models/gemini-2.0-flash"
+    ];
 
     try {
-      const endpoint =
-        "https:" +
-        "//generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=" +
-        encodeURIComponent(activeKey);
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ parts }]
-        })
-      });
-
-      const data = await res.json();
-      if (data.error) {
-        throw new Error(data.error.message);
+      const listRes = await fetch(
+        `${baseUrl}models?key=${encodeURIComponent(activeKey)}`
+      );
+      const listData = await listRes.json();
+      if (listData.error) {
+        throw new Error(listData.error.message);
       }
+      if (Array.isArray(listData.models)) {
+        const valid = listData.models
+          .filter(
+            (m) =>
+              m.supportedGenerationMethods?.includes("generateContent") &&
+              m.name.includes("gemini") &&
+              !m.name.includes("tts") &&
+              !m.name.includes("image") &&
+              !m.name.includes("embedding") &&
+              !m.name.includes("robotics") &&
+              !m.name.includes("computer-use") &&
+              m.name !== "models/gemini-2.5-flash"
+          )
+          .map((m) => m.name);
 
-      const responseParts = data.candidates?.[0]?.content?.parts || [];
-      const textOut = responseParts
-        .map((p) => p.text)
-        .filter(Boolean)
-        .join("\n");
+        const preferred = valid.sort((a, b) => {
+          const score = (name) => {
+            if (name.includes("gemini-3") && name.includes("flash")) return 1;
+            if (name.includes("2.5-flash-lite")) return 2;
+            if (name.includes("2.0-flash")) return 3;
+            if (name.includes("flash")) return 4;
+            return 5;
+          };
+          return score(a) - score(b);
+        });
 
-      return textOut || "No response generated.";
-    } catch (err) {
-      if (err.name === "AbortError") {
-        throw new Error("Request timed out after 15 seconds. Check your internet connection or API key.");
+        if (preferred.length > 0) {
+          candidateModels = preferred;
+        }
       }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
+    } catch (listErr) {
+      if (listErr.message?.includes("API key not valid")) {
+        throw listErr;
+      }
     }
+
+    // 2. Try candidate models in order until one succeeds
+    let lastError = "No working Gemini model found.";
+    for (const modelName of candidateModels.slice(0, 5)) {
+      try {
+        const res = await fetch(
+          `${baseUrl}${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts }] })
+          }
+        );
+        const data = await res.json();
+        if (!data.error) {
+          const responseParts = data.candidates?.[0]?.content?.parts || [];
+          const textOut = responseParts
+            .map((p) => p.text)
+            .filter(Boolean)
+            .join("\n");
+          if (textOut) return textOut;
+        } else {
+          lastError = data.error.message;
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
+    }
+
+    throw new Error(lastError);
   };
 
   const generateShiftBriefing = async () => {
     setLoadingAI(true);
-    setShiftBriefing("Contacting Gemini 3.0 Flash...");
+    setShiftBriefing("Checking active Gemini models & generating briefing...");
     try {
       const summaryPrompt = `You are an assistant for a Bell Technical Sales Consultant. Here is my current customer follow-up list: ${JSON.stringify(
         customers
@@ -175,7 +219,7 @@ export default function App() {
     setSelectedClient(client);
     setActiveTab("outreach");
     setLoadingAI(true);
-    setDraftedMessage("Generating message with Gemini 3.0 Flash...");
+    setDraftedMessage("Generating message...");
     try {
       const prompt = `Write a friendly, concise, non-pushy ${type} from a Bell retail Technical Sales Consultant to customer ${client.name}. 
 Service: ${client.service}. 
@@ -204,7 +248,7 @@ Keep it natural for texting from a work phone—no robotic corporate language, u
 
   const analyzePhoneContext = async () => {
     setLoadingAI(true);
-    setContextResult("Scanning with Gemini 3.0 Flash...");
+    setContextResult("Scanning with Gemini...");
     try {
       const prompt = `You are a Bell Technical Sales Consultant AI assistant. 
 My existing customer list is: ${JSON.stringify(customers)}.
@@ -247,7 +291,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.2</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.3</h1>
           <p className="text-xs text-blue-100">Technical Consultant Assistant</p>
         </div>
         <div className="flex items-center gap-2">
@@ -567,7 +611,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
         )}
       </main>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex justify-around py-2.5 z-20 max-w-md mx-auto">
+      <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex justify-around py-2.5 z-50 w-full">
         <button
           onClick={() => setActiveTab("clients")}
           className={`flex flex-col items-center gap-1 text-[11px] ${
