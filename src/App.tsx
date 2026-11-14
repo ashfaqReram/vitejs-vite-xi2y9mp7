@@ -55,7 +55,9 @@ const INITIAL_CUSTOMERS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState("clients");
   const [privacyMode, setPrivacyMode] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("bell_gemini_key") || DEFAULT_API_KEY);
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("bell_gemini_key") || DEFAULT_API_KEY
+  );
   const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
@@ -97,10 +99,10 @@ export default function App() {
   };
 
   const callGemini = async (promptText, inlineImage = null) => {
-    const activeKey = apiKey || DEFAULT_API_KEY;
+    const activeKey = (apiKey || DEFAULT_API_KEY || "").trim();
     if (!activeKey) {
       setShowKeyModal(true);
-      throw new Error("Please add your Gemini API Key first.");
+      throw new Error("Missing API Key. Tap the Key icon in the top-right corner to save your key.");
     }
 
     const parts = [{ text: promptText }];
@@ -113,40 +115,49 @@ export default function App() {
       });
     }
 
-    const models = [
-      "gemini-3.0-flash",
-      "gemini-3.8-flash",
-      "gemini-3-flash-preview",
-      "gemini-2.5-flash-lite"
-    ];
-    let lastError = "No response generated.";
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    for (const model of models) {
+    try {
       const endpoint =
         "https:" +
-        "//generativelanguage.googleapis.com/v1beta/models/" +
-        model +
-        ":generateContent?key=" +
-        activeKey;
+        "//generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=" +
+        encodeURIComponent(activeKey);
 
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }] })
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts }]
+        })
       });
 
       const data = await res.json();
-      if (!data.error) {
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      if (data.error) {
+        throw new Error(data.error.message);
       }
-      lastError = data.error.message;
-    }
 
-    throw new Error(lastError);
+      const responseParts = data.candidates?.[0]?.content?.parts || [];
+      const textOut = responseParts
+        .map((p) => p.text)
+        .filter(Boolean)
+        .join("\n");
+
+      return textOut || "No response generated.";
+    } catch (err) {
+      if (err.name === "AbortError") {
+        throw new Error("Request timed out after 15 seconds. Check your internet connection or API key.");
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   const generateShiftBriefing = async () => {
     setLoadingAI(true);
+    setShiftBriefing("Contacting Gemini 3.0 Flash...");
     try {
       const summaryPrompt = `You are an assistant for a Bell Technical Sales Consultant. Here is my current customer follow-up list: ${JSON.stringify(
         customers
@@ -164,6 +175,7 @@ export default function App() {
     setSelectedClient(client);
     setActiveTab("outreach");
     setLoadingAI(true);
+    setDraftedMessage("Generating message with Gemini 3.0 Flash...");
     try {
       const prompt = `Write a friendly, concise, non-pushy ${type} from a Bell retail Technical Sales Consultant to customer ${client.name}. 
 Service: ${client.service}. 
@@ -192,6 +204,7 @@ Keep it natural for texting from a work phone—no robotic corporate language, u
 
   const analyzePhoneContext = async () => {
     setLoadingAI(true);
+    setContextResult("Scanning with Gemini 3.0 Flash...");
     try {
       const prompt = `You are a Bell Technical Sales Consultant AI assistant. 
 My existing customer list is: ${JSON.stringify(customers)}.
@@ -234,7 +247,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.2</h1>
           <p className="text-xs text-blue-100">Technical Consultant Assistant</p>
         </div>
         <div className="flex items-center gap-2">
