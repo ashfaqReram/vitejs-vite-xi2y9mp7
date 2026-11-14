@@ -88,7 +88,7 @@ export default function App() {
 
     const endpoint =
       "https:" +
-      "//generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=" +
+      "//generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
       encodeURIComponent(activeKey);
 
     const res = await fetch(endpoint, {
@@ -213,7 +213,7 @@ Keep the entire message concise and natural.`
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.9</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.9.1</h1>
           <p className="text-xs text-blue-100">Ash — 34 Pippy Place</p>
         </div>
         <div className="flex items-center gap-2">
