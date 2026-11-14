@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import {
   Phone,
   MessageSquare,
-  Sparkles,
   UserPlus,
   Eye,
   EyeOff,
@@ -35,7 +34,7 @@ export default function App() {
   const [privacyMode, setPrivacyMode] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem("bell_customers_v7");
+    const saved = localStorage.getItem("bell_customers_v8");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
@@ -55,7 +54,7 @@ export default function App() {
   const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("bell_customers_v7", JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v8", JSON.stringify(customers));
   }, [customers]);
 
   const maskName = (name) => {
@@ -72,11 +71,11 @@ export default function App() {
     let body = "";
 
     if (client.service === "Mobility & BRS") {
-      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just checking in to see how everything is working with your new mobility plan/device and your home internet/TV setup. Let me know if you have any questions!\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, it's Ash here from Bell at Pippy Place! Just checking in to see how everything is working with your new mobility plan/device and your home internet/TV setup. Let me know if you have any questions!`;
     } else if (client.service === "BRS Only") {
-      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just wanted to follow up on your home internet and TV install. How is the Wi-Fi speed and setup working out for you?\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, it's Ash here from Bell at Pippy Place! Just wanted to follow up on your home internet and TV install. How is the Wi-Fi speed and setup working out for you?`;
     } else {
-      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just checking in to see how you're liking your new mobile device and plan. Everything working great with your coverage?\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, it's Ash here from Bell at Pippy Place! Just checking in to see how you're liking your new mobile device and plan. Everything working great with your coverage?`;
     }
 
     setDraftedMessage(body);
@@ -115,7 +114,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v2.0.1</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v2.0.2</h1>
           <p className="text-xs text-blue-100">Ash — 34 Pippy Place</p>
         </div>
         <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
@@ -228,7 +227,7 @@ export default function App() {
               <h2 className="font-bold text-sm flex items-center gap-2"><FileText size={16} className="text-blue-400" /> Quick Notes</h2>
               <textarea value={contextInput} onChange={(e) => setContextInput(e.target.value)} placeholder="Type customer notes here..." rows={4} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
               <button onClick={() => {
-                setContextResult(`Follow-up saved for notes: "${contextInput}"\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`);
+                setContextResult(`Follow-up saved for notes: "${contextInput}"`);
               }} className="w-full bg-[#00549A] py-2.5 rounded-xl text-xs font-semibold">Format Note</button>
             </div>
             {contextResult && <div className="bg-slate-900 p-4 rounded-2xl text-xs text-slate-200 whitespace-pre-line">{contextResult}</div>}
