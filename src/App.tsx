@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Phone,
   MessageSquare,
@@ -14,95 +14,93 @@ import {
   CheckCircle2,
   Key,
   Trash2,
-  Copy,
-} from 'lucide-react';
+  Copy
+} from "lucide-react";
 
 // ============================================================================
 // PASTE YOUR GEMINI API KEY INSIDE THE QUOTES BELOW (OR USE THE KEY ICON IN APP):
-const DEFAULT_API_KEY = '';
+const DEFAULT_API_KEY = "";
 // ============================================================================
 
 const INITIAL_CUSTOMERS = [
   {
-    id: '1',
-    name: 'Liam MacDonald',
-    phone: '7095550142',
-    service: 'Fibe 1.5 Gbps + Fibe TV App',
-    stage: '3-Day Install Check',
-    dueDate: 'Today',
-    notes: 'Tech install scheduled yesterday afternoon. Has 2 Wi-Fi pods.',
+    id: "1",
+    name: "Liam MacDonald",
+    phone: "7095550142",
+    service: "Fibe 1.5 Gbps + Fibe TV App",
+    stage: "3-Day Install Check",
+    dueDate: "Today",
+    notes: "Tech install scheduled yesterday afternoon. Has 2 Wi-Fi pods."
   },
   {
-    id: '2',
-    name: 'Sarah Kavanagh',
-    phone: '7095550198',
-    service: 'iPhone 16 Pro (2-Yr SmartPay)',
-    stage: '30-Day 1st Bill Review',
-    dueDate: 'Tomorrow',
-    notes: 'Explain connection fee credit and partial month proration.',
+    id: "2",
+    name: "Sarah Kavanagh",
+    phone: "7095550198",
+    service: "iPhone 16 Pro (2-Yr SmartPay)",
+    stage: "30-Day 1st Bill Review",
+    dueDate: "Tomorrow",
+    notes: "Explain connection fee credit and partial month proration."
   },
   {
-    id: '3',
-    name: 'David Mercer',
-    phone: '7095550115',
-    service: 'BYOD 100GB Mobility',
-    stage: 'Home Internet Cross-Sell',
-    dueDate: 'In 3 Days',
-    notes: 'Mentioned his current home internet contract ends this month.',
-  },
+    id: "3",
+    name: "David Mercer",
+    phone: "7095550115",
+    service: "BYOD 100GB Mobility",
+    stage: "Home Internet Cross-Sell",
+    dueDate: "In 3 Days",
+    notes: "Mentioned his current home internet contract ends this month."
+  }
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('clients');
+  const [activeTab, setActiveTab] = useState("clients");
   const [privacyMode, setPrivacyMode] = useState(false);
-  const [apiKey, setApiKey] = useState(
-    () => localStorage.getItem('bell_gemini_key') || DEFAULT_API_KEY
-  );
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("bell_gemini_key") || DEFAULT_API_KEY);
   const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem('bell_customers_v1');
+    const saved = localStorage.getItem("bell_customers_v1");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
   const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    phone: '',
-    service: '',
-    stage: '3-Day Install Check',
-    notes: '',
+    name: "",
+    phone: "",
+    service: "",
+    stage: "3-Day Install Check",
+    notes: ""
   });
   const [showAddForm, setShowAddForm] = useState(false);
 
   const [loadingAI, setLoadingAI] = useState(false);
-  const [shiftBriefing, setShiftBriefing] = useState('');
+  const [shiftBriefing, setShiftBriefing] = useState("");
   const [selectedClient, setSelectedClient] = useState(INITIAL_CUSTOMERS[0]);
-  const [draftedMessage, setDraftedMessage] = useState('');
-  const [contextInput, setContextInput] = useState('');
+  const [draftedMessage, setDraftedMessage] = useState("");
+  const [contextInput, setContextInput] = useState("");
   const [imageBase64, setImageBase64] = useState(null);
-  const [contextResult, setContextResult] = useState('');
+  const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem('bell_customers_v1', JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v1", JSON.stringify(customers));
   }, [customers]);
 
   const saveApiKey = (newKey) => {
     setApiKey(newKey.trim());
-    localStorage.setItem('bell_gemini_key', newKey.trim());
+    localStorage.setItem("bell_gemini_key", newKey.trim());
     setShowKeyModal(false);
   };
 
   const maskName = (name) => {
     if (!privacyMode) return name;
-    const parts = name.split(' ');
-    return parts.map((p, i) => (i === 0 ? p : p[0] + '***')).join(' ');
+    const parts = name.split(" ");
+    return parts.map((p, i) => (i === 0 ? p : p[0] + "***")).join(" ");
   };
 
   const callGemini = async (promptText, inlineImage = null) => {
     const activeKey = apiKey || DEFAULT_API_KEY;
     if (!activeKey) {
       setShowKeyModal(true);
-      throw new Error('Please add your Gemini API Key first.');
+      throw new Error("Please add your Gemini API Key first.");
     }
 
     const parts = [{ text: promptText }];
@@ -110,28 +108,41 @@ export default function App() {
       parts.push({
         inlineData: {
           mimeType: inlineImage.mimeType,
-          data: inlineImage.data,
-        },
+          data: inlineImage.data
+        }
       });
     }
 
-    const endpoint =
-      'https:' +
-      '//generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' +
-      activeKey;
+    const models = [
+      "gemini-3.0-flash",
+      "gemini-3.8-flash",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash-lite"
+    ];
+    let lastError = "No response generated.";
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts }] }),
-    });
+    for (const model of models) {
+      const endpoint =
+        "https:" +
+        "//generativelanguage.googleapis.com/v1beta/models/" +
+        model +
+        ":generateContent?key=" +
+        activeKey;
 
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    return (
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'No response generated.'
-    );
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts }] })
+      });
+
+      const data = await res.json();
+      if (!data.error) {
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      }
+      lastError = data.error.message;
+    }
+
+    throw new Error(lastError);
   };
 
   const generateShiftBriefing = async () => {
@@ -143,15 +154,15 @@ export default function App() {
       const reply = await callGemini(summaryPrompt);
       setShiftBriefing(reply);
     } catch (err) {
-      setShiftBriefing('Error: ' + err.message);
+      setShiftBriefing("Error: " + err.message);
     } finally {
       setLoadingAI(false);
     }
   };
 
-  const generateFollowUpMessage = async (client, type = 'SMS') => {
+  const generateFollowUpMessage = async (client, type = "SMS") => {
     setSelectedClient(client);
-    setActiveTab('outreach');
+    setActiveTab("outreach");
     setLoadingAI(true);
     try {
       const prompt = `Write a friendly, concise, non-pushy ${type} from a Bell retail Technical Sales Consultant to customer ${client.name}. 
@@ -162,7 +173,7 @@ Keep it natural for texting from a work phone—no robotic corporate language, u
       const reply = await callGemini(prompt);
       setDraftedMessage(reply.trim());
     } catch (err) {
-      setDraftedMessage('Error: ' + err.message);
+      setDraftedMessage("Error: " + err.message);
     } finally {
       setLoadingAI(false);
     }
@@ -173,12 +184,8 @@ Keep it natural for texting from a work phone—no robotic corporate language, u
     if (!file) return;
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64String = reader.result.split(',')[1];
-      setImageBase64({
-        mimeType: file.type,
-        data: base64String,
-        preview: reader.result,
-      });
+      const base64String = reader.result.split(",")[1];
+      setImageBase64({ mimeType: file.type, data: base64String, preview: reader.result });
     };
     reader.readAsDataURL(file);
   };
@@ -194,7 +201,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
       const reply = await callGemini(prompt, imageBase64);
       setContextResult(reply);
     } catch (err) {
-      setContextResult('Error: ' + err.message);
+      setContextResult("Error: " + err.message);
     } finally {
       setLoadingAI(false);
     }
@@ -206,24 +213,16 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
     const created = {
       ...newCustomer,
       id: Date.now().toString(),
-      dueDate: 'Today',
+      dueDate: "Today"
     };
     setCustomers([created, ...customers]);
-    setNewCustomer({
-      name: '',
-      phone: '',
-      service: '',
-      stage: '3-Day Install Check',
-      notes: '',
-    });
+    setNewCustomer({ name: "", phone: "", service: "", stage: "3-Day Install Check", notes: "" });
     setShowAddForm(false);
   };
 
   const updateCadence = (id, newDue, newStage) => {
     setCustomers(
-      customers.map((c) =>
-        c.id === id ? { ...c, dueDate: newDue, stage: newStage || c.stage } : c
-      )
+      customers.map((c) => (c.id === id ? { ...c, dueDate: newDue, stage: newStage || c.stage } : c))
     );
   };
 
@@ -235,12 +234,8 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">
-            Bell Sales Hub
-          </h1>
-          <p className="text-xs text-blue-100">
-            Technical Consultant Assistant
-          </p>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub</h1>
+          <p className="text-xs text-blue-100">Technical Consultant Assistant</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -282,9 +277,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                 Cancel
               </button>
               <button
-                onClick={() =>
-                  saveApiKey(document.getElementById('apiKeyInput').value)
-                }
+                onClick={() => saveApiKey(document.getElementById("apiKeyInput").value)}
                 className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-[#00549A] text-white"
               >
                 Save Key
@@ -295,7 +288,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
       )}
 
       <main className="max-w-md mx-auto p-4 space-y-4">
-        {activeTab === 'clients' && (
+        {activeTab === "clients" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -307,7 +300,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                   disabled={loadingAI}
                   className="text-xs bg-[#00549A] hover:bg-blue-600 px-3 py-1.5 rounded-lg font-medium"
                 >
-                  {loadingAI ? 'Analyzing...' : 'Run Briefing'}
+                  {loadingAI ? "Analyzing..." : "Run Briefing"}
                 </button>
               </div>
               {shiftBriefing ? (
@@ -316,8 +309,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                 </div>
               ) : (
                 <p className="text-xs text-slate-400">
-                  Tap Run Briefing to let Gemini rank today&apos;s highest-value
-                  follow-ups and cross-sells.
+                  Tap Run Briefing to let Gemini rank today&apos;s highest-value follow-ups and cross-sells.
                 </p>
               )}
             </div>
@@ -342,35 +334,27 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                 <input
                   placeholder="Customer Name"
                   value={newCustomer.name}
-                  onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, name: e.target.value })
-                  }
+                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                   className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
                   required
                 />
                 <input
                   placeholder="Phone Number (e.g. 7095550199)"
                   value={newCustomer.phone}
-                  onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, phone: e.target.value })
-                  }
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                   className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
                   required
                 />
                 <input
                   placeholder="Sold Service (e.g. Fibe 3 Gbps + Mobility)"
                   value={newCustomer.service}
-                  onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, service: e.target.value })
-                  }
+                  onChange={(e) => setNewCustomer({ ...newCustomer, service: e.target.value })}
                   className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
                 />
                 <textarea
                   placeholder="Notes (install date, promised credits, family phones...)"
                   value={newCustomer.notes}
-                  onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, notes: e.target.value })
-                  }
+                  onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
                   className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
                   rows={2}
                 />
@@ -390,12 +374,8 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="font-bold text-base text-white">
-                      {maskName(c.name)}
-                    </h3>
-                    <p className="text-xs text-blue-400 font-medium">
-                      {c.service}
-                    </p>
+                    <h3 className="font-bold text-base text-white">{maskName(c.name)}</h3>
+                    <p className="text-xs text-blue-400 font-medium">{c.service}</p>
                   </div>
                   <span className="text-[11px] bg-blue-950 text-blue-300 border border-blue-800 px-2.5 py-0.5 rounded-full">
                     {c.dueDate} • {c.stage}
@@ -406,29 +386,19 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
 
                 <div className="flex items-center gap-1.5 pt-1 flex-wrap">
                   <button
-                    onClick={() =>
-                      updateCadence(c.id, 'In 3 Days', '3-Day Install Check')
-                    }
+                    onClick={() => updateCadence(c.id, "In 3 Days", "3-Day Install Check")}
                     className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300"
                   >
                     +3d Check
                   </button>
                   <button
-                    onClick={() =>
-                      updateCadence(
-                        c.id,
-                        'In 30 Days',
-                        '30-Day 1st Bill Review'
-                      )
-                    }
+                    onClick={() => updateCadence(c.id, "In 30 Days", "30-Day 1st Bill Review")}
                     className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300"
                   >
                     +30d 1st Bill
                   </button>
                   <button
-                    onClick={() =>
-                      updateCadence(c.id, 'Completed', 'Followed Up')
-                    }
+                    onClick={() => updateCadence(c.id, "Completed", "Followed Up")}
                     className="text-[11px] bg-emerald-950/80 text-emerald-300 px-2.5 py-1 rounded-md flex items-center gap-1"
                   >
                     <CheckCircle2 size={12} /> Done
@@ -455,7 +425,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                     <MessageSquare size={14} /> Text
                   </a>
                   <button
-                    onClick={() => generateFollowUpMessage(c, 'SMS')}
+                    onClick={() => generateFollowUpMessage(c, "SMS")}
                     className="flex items-center justify-center gap-1.5 bg-[#00549A] hover:bg-blue-600 py-2 rounded-xl text-xs font-semibold text-white"
                   >
                     <Sparkles size={14} /> AI Draft
@@ -466,17 +436,14 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
           </div>
         )}
 
-        {activeTab === 'scanner' && (
+        {activeTab === "scanner" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h2 className="font-bold text-sm flex items-center gap-2">
-                <FileText size={16} className="text-blue-400" /> Phone Context &
-                Promo Matcher
+                <FileText size={16} className="text-blue-400" /> Phone Context & Promo Matcher
               </h2>
               <p className="text-xs text-slate-400">
-                Paste text from your iPhone Shortcut, voice notes, or upload a
-                photo of a dealer promo sheet to match offers with your
-                customers.
+                Paste text from your iPhone Shortcut, voice notes, or upload a photo of a dealer promo sheet to match offers with your customers.
               </p>
 
               <textarea
@@ -489,21 +456,13 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
 
               <label className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 py-2.5 rounded-xl text-xs font-medium cursor-pointer">
                 <Upload size={15} /> Upload Promo Photo or Note Screenshot
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
+                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
               </label>
 
               {imageBase64 && (
                 <div className="text-xs text-emerald-400 flex items-center justify-between bg-slate-950 p-2 rounded-lg">
                   <span>Image attached ready for Gemini scan</span>
-                  <button
-                    onClick={() => setImageBase64(null)}
-                    className="text-red-400 underline"
-                  >
+                  <button onClick={() => setImageBase64(null)} className="text-red-400 underline">
                     Remove
                   </button>
                 </div>
@@ -515,17 +474,13 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
                 className="w-full bg-[#00549A] hover:bg-blue-600 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2"
               >
                 <Sparkles size={15} />
-                {loadingAI
-                  ? 'Scanning with Gemini...'
-                  : 'Match Customers & Suggest Pitch'}
+                {loadingAI ? "Scanning with Gemini..." : "Match Customers & Suggest Pitch"}
               </button>
             </div>
 
             {contextResult && (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-                <h3 className="text-xs font-bold uppercase text-blue-400">
-                  AI Recommendations
-                </h3>
+                <h3 className="text-xs font-bold uppercase text-blue-400">AI Recommendations</h3>
                 <div className="text-xs text-slate-200 whitespace-pre-line leading-relaxed">
                   {contextResult}
                 </div>
@@ -534,7 +489,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
           </div>
         )}
 
-        {activeTab === 'outreach' && (
+        {activeTab === "outreach" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h2 className="font-bold text-sm">AI Message Composer</h2>
@@ -542,9 +497,7 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
               <select
                 value={selectedClient?.id}
                 onChange={(e) =>
-                  setSelectedClient(
-                    customers.find((c) => c.id === e.target.value)
-                  )
+                  setSelectedClient(customers.find((c) => c.id === e.target.value))
                 }
                 className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white"
               >
@@ -557,19 +510,14 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => generateFollowUpMessage(selectedClient, 'SMS')}
+                  onClick={() => generateFollowUpMessage(selectedClient, "SMS")}
                   disabled={loadingAI}
                   className="flex-1 bg-[#00549A] py-2 rounded-xl text-xs font-semibold"
                 >
                   Draft SMS Text
                 </button>
                 <button
-                  onClick={() =>
-                    generateFollowUpMessage(
-                      selectedClient,
-                      'Voicemail Call Script'
-                    )
-                  }
+                  onClick={() => generateFollowUpMessage(selectedClient, "Voicemail Call Script")}
                   disabled={loadingAI}
                   className="flex-1 bg-slate-800 py-2 rounded-xl text-xs font-semibold"
                 >
@@ -588,17 +536,13 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
               {selectedClient && draftedMessage && (
                 <div className="flex gap-2">
                   <button
-                    onClick={() =>
-                      navigator.clipboard.writeText(draftedMessage)
-                    }
+                    onClick={() => navigator.clipboard.writeText(draftedMessage)}
                     className="flex items-center justify-center gap-1.5 bg-slate-800 px-4 py-2.5 rounded-xl text-xs font-medium"
                   >
                     <Copy size={14} /> Copy
                   </button>
                   <a
-                    href={`sms:${
-                      selectedClient.phone
-                    }?&body=${encodeURIComponent(draftedMessage)}`}
+                    href={`sms:${selectedClient.phone}?&body=${encodeURIComponent(draftedMessage)}`}
                     className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl text-xs font-bold text-white"
                   >
                     <Send size={14} /> Open in iPhone Messages
@@ -612,33 +556,27 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
 
       <nav className="fixed bottom-0 inset-x-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex justify-around py-2.5 z-20 max-w-md mx-auto">
         <button
-          onClick={() => setActiveTab('clients')}
+          onClick={() => setActiveTab("clients")}
           className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === 'clients'
-              ? 'text-blue-400 font-semibold'
-              : 'text-slate-400'
+            activeTab === "clients" ? "text-blue-400 font-semibold" : "text-slate-400"
           }`}
         >
           <Calendar size={18} />
           Queue
         </button>
         <button
-          onClick={() => setActiveTab('scanner')}
+          onClick={() => setActiveTab("scanner")}
           className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === 'scanner'
-              ? 'text-blue-400 font-semibold'
-              : 'text-slate-400'
+            activeTab === "scanner" ? "text-blue-400 font-semibold" : "text-slate-400"
           }`}
         >
           <Upload size={18} />
           Phone Context
         </button>
         <button
-          onClick={() => setActiveTab('outreach')}
+          onClick={() => setActiveTab("outreach")}
           className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === 'outreach'
-              ? 'text-blue-400 font-semibold'
-              : 'text-slate-400'
+            activeTab === "outreach" ? "text-blue-400 font-semibold" : "text-slate-400"
           }`}
         >
           <MessageSquare size={18} />
