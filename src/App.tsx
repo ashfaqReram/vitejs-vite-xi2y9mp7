@@ -25,7 +25,7 @@ const INITIAL_CUSTOMERS = [
     id: "1",
     name: "Liam MacDonald",
     phone: "7095550142",
-    service: "Mobility & BRS (Fibe + Mobile)",
+    service: "Mobility & BRS",
     stage: "3-Day Install Check",
     dueDate: "Today",
     notes: "New bundle activation."
@@ -41,7 +41,7 @@ export default function App() {
   const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem("bell_customers_v4");
+    const saved = localStorage.getItem("bell_customers_v5");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
@@ -64,7 +64,7 @@ export default function App() {
   const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("bell_customers_v4", JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v5", JSON.stringify(customers));
   }, [customers]);
 
   const saveApiKey = (newKey) => {
@@ -187,7 +187,7 @@ Return ONLY a valid JSON object in this exact format (no markdown blocks):
     try {
       let customInstructions = "";
       if (client.service === "Mobility & BRS") {
-        customInstructions = "Mention checking in on both their new mobility plan/device and their home internet/TV (BRS) installation/services.";
+        customInstructions = "Mention checking in on both their new mobility plan/device and their home internet/TV (BRS) setup.";
       } else if (client.service === "BRS Only") {
         customInstructions = "Mention checking in specifically on their home internet/TV (BRS) setup and Wi-Fi performance.";
       } else {
@@ -198,7 +198,8 @@ Return ONLY a valid JSON object in this exact format (no markdown blocks):
         `Write a friendly, polite, non-pushy post-sale follow-up text message from a Bell Technical Sales Consultant to customer ${client.name}. 
 Sale Type: ${client.service}. 
 ${customInstructions}
-Keep it concise, under 300 characters, asking how everything is working out and offering assistance.`
+CRITICAL REQUIREMENT: Sign off explicitly as "Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4".
+Keep the entire message concise and natural.`
       );
       setDraftedMessage(reply.trim());
     } catch (err) {
@@ -212,8 +213,8 @@ Keep it concise, under 300 characters, asking how everything is working out and 
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.8</h1>
-          <p className="text-xs text-blue-100">Post-Sale Assistant</p>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.9</h1>
+          <p className="text-xs text-blue-100">Ash — 34 Pippy Place</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
@@ -337,7 +338,7 @@ Keep it concise, under 300 characters, asking how everything is working out and 
               <button onClick={async () => {
                 setLoadingAI(true);
                 try {
-                  const res = await callGemini(`Analyze note: "${contextInput}". Suggest a helpful follow-up response.`);
+                  const res = await callGemini(`Analyze note: "${contextInput}". Suggest a helpful follow-up response signed by Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4.`);
                   setContextResult(res);
                 } catch(e) { setContextResult(e.message); }
                 setLoadingAI(false);
@@ -354,7 +355,7 @@ Keep it concise, under 300 characters, asking how everything is working out and 
               <select value={selectedClient?.id} onChange={(e) => setSelectedClient(customers.find((c) => c.id === e.target.value))} className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white font-medium">
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.service}</option>)}
               </select>
-              <button onClick={() => generatePostSaleText(selectedClient)} className="w-full bg-[#00549A] py-2 rounded-xl text-xs font-semibold">Regenerate for this Sale Type</button>
+              <button onClick={() => generatePostSaleText(selectedClient)} className="w-full bg-[#00549A] py-2 rounded-xl text-xs font-semibold">Regenerate Post-Sale Text</button>
               <textarea value={draftedMessage} onChange={(e) => setDraftedMessage(e.target.value)} rows={5} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100" />
               {selectedClient && draftedMessage && (
                 <div className="flex gap-2">
@@ -368,7 +369,7 @@ Keep it concise, under 300 characters, asking how everything is working out and 
       </main>
 
       <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex justify-around py-2.5 z-50 w-full max-w-md mx-auto">
-        <button onClick={() => setActiveTab("clients")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "clients" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><Calendar size=undefined /> Queue</button>
+        <button onClick={() => setActiveTab("clients")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "clients" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><Calendar size={18} /> Queue</button>
         <button onClick={() => setActiveTab("scanner")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "scanner" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><Upload size={18} /> Notes</button>
         <button onClick={() => setActiveTab("outreach")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "outreach" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><MessageSquare size={18} /> Follow-Up</button>
       </nav>
