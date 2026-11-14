@@ -14,41 +14,21 @@ import {
   CheckCircle2,
   Key,
   Trash2,
-  Copy
+  Copy,
+  ClipboardPaste
 } from "lucide-react";
 
-// ============================================================================
-// PASTE YOUR GEMINI API KEY INSIDE THE QUOTES BELOW (OR USE THE KEY ICON IN APP):
 const DEFAULT_API_KEY = "";
-// ============================================================================
 
 const INITIAL_CUSTOMERS = [
   {
     id: "1",
     name: "Liam MacDonald",
     phone: "7095550142",
-    service: "Fibe 1.5 Gbps + Fibe TV App",
+    service: "Mobility & BRS (Fibe + Mobile)",
     stage: "3-Day Install Check",
     dueDate: "Today",
-    notes: "Tech install scheduled yesterday afternoon. Has 2 Wi-Fi pods."
-  },
-  {
-    id: "2",
-    name: "Sarah Kavanagh",
-    phone: "7095550198",
-    service: "iPhone 16 Pro (2-Yr SmartPay)",
-    stage: "30-Day 1st Bill Review",
-    dueDate: "Tomorrow",
-    notes: "Explain connection fee credit and partial month proration."
-  },
-  {
-    id: "3",
-    name: "David Mercer",
-    phone: "7095550115",
-    service: "BYOD 100GB Mobility",
-    stage: "Home Internet Cross-Sell",
-    dueDate: "In 3 Days",
-    notes: "Mentioned his current home internet contract ends this month."
+    notes: "New bundle activation."
   }
 ];
 
@@ -61,29 +41,30 @@ export default function App() {
   const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem("bell_customers_v1");
+    const saved = localStorage.getItem("bell_customers_v4");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
     phone: "",
-    service: "",
+    service: "Mobility & BRS",
     stage: "3-Day Install Check",
     notes: ""
   });
   const [showAddForm, setShowAddForm] = useState(false);
 
+  const [quickSmsInput, setQuickSmsInput] = useState("");
+  const [parsingSms, setParsingSms] = useState(false);
+
   const [loadingAI, setLoadingAI] = useState(false);
-  const [shiftBriefing, setShiftBriefing] = useState("");
   const [selectedClient, setSelectedClient] = useState(INITIAL_CUSTOMERS[0]);
   const [draftedMessage, setDraftedMessage] = useState("");
   const [contextInput, setContextInput] = useState("");
-  const [imageBase64, setImageBase64] = useState(null);
   const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("bell_customers_v1", JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v4", JSON.stringify(customers));
   }, [customers]);
 
   const saveApiKey = (newKey) => {
@@ -98,135 +79,127 @@ export default function App() {
     return parts.map((p, i) => (i === 0 ? p : p[0] + "***")).join(" ");
   };
 
-  const callGemini = async (promptText, inlineImage = null) => {
+  const callGemini = async (promptText) => {
     const activeKey = (apiKey || DEFAULT_API_KEY || "").trim();
     if (!activeKey) {
       setShowKeyModal(true);
-      throw new Error("Missing API Key. Tap the Key icon in the top-right corner to save your key.");
+      throw new Error("Missing API Key. Tap the Key icon in the top-right.");
     }
 
-    const parts = [{ text: promptText }];
-    if (inlineImage) {
-      parts.push({
-        inlineData: {
-          mimeType: inlineImage.mimeType,
-          data: inlineImage.data
-        }
-      });
-    }
+    const endpoint =
+      "https:" +
+      "//generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=" +
+      encodeURIComponent(activeKey);
 
-    const baseUrl = "https:" + "//generativelanguage.googleapis.com/v1beta/";
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }]
+      })
+    });
 
-    // 1. Ask Google ListModels which models are active for this API key
-    let candidateModels = [
-      "models/gemini-3-flash-preview",
-      "models/gemini-2.5-flash-lite",
-      "models/gemini-2.0-flash"
-    ];
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  };
 
+  const parseAndLogSms = async () => {
+    if (!quickSmsInput.trim()) return;
+    setParsingSms(true);
     try {
-      const listRes = await fetch(
-        `${baseUrl}models?key=${encodeURIComponent(activeKey)}`
-      );
-      const listData = await listRes.json();
-      if (listData.error) {
-        throw new Error(listData.error.message);
-      }
-      if (Array.isArray(listData.models)) {
-        const valid = listData.models
-          .filter(
-            (m) =>
-              m.supportedGenerationMethods?.includes("generateContent") &&
-              m.name.includes("gemini") &&
-              !m.name.includes("tts") &&
-              !m.name.includes("image") &&
-              !m.name.includes("embedding") &&
-              !m.name.includes("robotics") &&
-              !m.name.includes("computer-use") &&
-              m.name !== "models/gemini-2.5-flash"
+      const prompt = `Analyze this incoming customer text: "${quickSmsInput}".
+My current customer list is: ${JSON.stringify(customers)}.
+Return ONLY a valid JSON object in this exact format (no markdown blocks):
+{
+  "matchedCustomerId": "ID if matching customer, or null",
+  "newName": "Name if new customer, or null",
+  "newPhone": "Phone if new customer, or null",
+  "serviceType": "Mobility & BRS, BRS Only, or Mobility Only",
+  "summaryNote": "1 short sentence summary"
+}`;
+      const reply = await callGemini(prompt);
+      const cleaned = reply.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      if (parsed.matchedCustomerId) {
+        setCustomers(
+          customers.map((c) =>
+            c.id === parsed.matchedCustomerId
+              ? { ...c, notes: `[SMS]: ${parsed.summaryNote} — ` + c.notes }
+              : c
           )
-          .map((m) => m.name);
-
-        const preferred = valid.sort((a, b) => {
-          const score = (name) => {
-            if (name.includes("gemini-3") && name.includes("flash")) return 1;
-            if (name.includes("2.5-flash-lite")) return 2;
-            if (name.includes("2.0-flash")) return 3;
-            if (name.includes("flash")) return 4;
-            return 5;
-          };
-          return score(a) - score(b);
-        });
-
-        if (preferred.length > 0) {
-          candidateModels = preferred;
-        }
-      }
-    } catch (listErr) {
-      if (listErr.message?.includes("API key not valid")) {
-        throw listErr;
-      }
-    }
-
-    // 2. Try candidate models in order until one succeeds
-    let lastError = "No working Gemini model found.";
-    for (const modelName of candidateModels.slice(0, 5)) {
-      try {
-        const res = await fetch(
-          `${baseUrl}${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts }] })
-          }
         );
-        const data = await res.json();
-        if (!data.error) {
-          const responseParts = data.candidates?.[0]?.content?.parts || [];
-          const textOut = responseParts
-            .map((p) => p.text)
-            .filter(Boolean)
-            .join("\n");
-          if (textOut) return textOut;
-        } else {
-          lastError = data.error.message;
-        }
-      } catch (err) {
-        lastError = err.message;
+      } else {
+        const created = {
+          id: Date.now().toString(),
+          name: parsed.newName || "New Customer",
+          phone: parsed.newPhone || "7095550000",
+          service: parsed.serviceType || "Mobility & BRS",
+          stage: "3-Day Install Check",
+          dueDate: "Today",
+          notes: parsed.summaryNote
+        };
+        setCustomers([created, ...customers]);
       }
-    }
-
-    throw new Error(lastError);
-  };
-
-  const generateShiftBriefing = async () => {
-    setLoadingAI(true);
-    setShiftBriefing("Checking active Gemini models & generating briefing...");
-    try {
-      const summaryPrompt = `You are an assistant for a Bell Technical Sales Consultant. Here is my current customer follow-up list: ${JSON.stringify(
-        customers
-      )}. Give me a short, punchy 3-bullet shift priority briefing on who to contact first today, what cross-sell or retention angle to use, and any proration/install tips.`;
-      const reply = await callGemini(summaryPrompt);
-      setShiftBriefing(reply);
+      setQuickSmsInput("");
     } catch (err) {
-      setShiftBriefing("Error: " + err.message);
+      alert("Could not parse message: " + err.message);
     } finally {
-      setLoadingAI(false);
+      setParsingSms(false);
     }
   };
 
-  const generateFollowUpMessage = async (client, type = "SMS") => {
+  const addCustomer = (e) => {
+    e.preventDefault();
+    if (!newCustomer.name || !newCustomer.phone) return;
+    setCustomers([
+      { ...newCustomer, id: Date.now().toString(), dueDate: "Today" },
+      ...customers
+    ]);
+    setNewCustomer({
+      name: "",
+      phone: "",
+      service: "Mobility & BRS",
+      stage: "3-Day Install Check",
+      notes: ""
+    });
+    setShowAddForm(false);
+  };
+
+  const updateCadence = (id, newDue, newStage) => {
+    setCustomers(
+      customers.map((c) =>
+        c.id === id ? { ...c, dueDate: newDue, stage: newStage || c.stage } : c
+      )
+    );
+  };
+
+  const deleteCustomer = (id) => {
+    setCustomers(customers.filter((c) => c.id !== id));
+  };
+
+  const generatePostSaleText = async (client) => {
     setSelectedClient(client);
     setActiveTab("outreach");
     setLoadingAI(true);
-    setDraftedMessage("Generating message...");
+    setDraftedMessage("Drafting post-sale follow-up...");
     try {
-      const prompt = `Write a friendly, concise, non-pushy ${type} from a Bell retail Technical Sales Consultant to customer ${client.name}. 
-Service: ${client.service}. 
-Follow-up stage: ${client.stage}. 
-Notes: ${client.notes}. 
-Keep it natural for texting from a work phone—no robotic corporate language, under 320 characters if SMS.`;
-      const reply = await callGemini(prompt);
+      let customInstructions = "";
+      if (client.service === "Mobility & BRS") {
+        customInstructions = "Mention checking in on both their new mobility plan/device and their home internet/TV (BRS) installation/services.";
+      } else if (client.service === "BRS Only") {
+        customInstructions = "Mention checking in specifically on their home internet/TV (BRS) setup and Wi-Fi performance.";
+      } else {
+        customInstructions = "Mention checking in specifically on their new mobile device, network coverage, and cellular plan.";
+      }
+
+      const reply = await callGemini(
+        `Write a friendly, polite, non-pushy post-sale follow-up text message from a Bell Technical Sales Consultant to customer ${client.name}. 
+Sale Type: ${client.service}. 
+${customInstructions}
+Keep it concise, under 300 characters, asking how everything is working out and offering assistance.`
+      );
       setDraftedMessage(reply.trim());
     } catch (err) {
       setDraftedMessage("Error: " + err.message);
@@ -235,78 +208,18 @@ Keep it natural for texting from a work phone—no robotic corporate language, u
     }
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result.split(",")[1];
-      setImageBase64({ mimeType: file.type, data: base64String, preview: reader.result });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const analyzePhoneContext = async () => {
-    setLoadingAI(true);
-    setContextResult("Scanning with Gemini...");
-    try {
-      const prompt = `You are a Bell Technical Sales Consultant AI assistant. 
-My existing customer list is: ${JSON.stringify(customers)}.
-Analyze the following notes/screenshot from my phone: "${contextInput}".
-1. Match any names/numbers to my existing customers or identify new leads.
-2. If there is a promo sheet or rate plan mentioned, suggest which of my customers would benefit most and write a 1-sentence text I can send them.`;
-      const reply = await callGemini(prompt, imageBase64);
-      setContextResult(reply);
-    } catch (err) {
-      setContextResult("Error: " + err.message);
-    } finally {
-      setLoadingAI(false);
-    }
-  };
-
-  const addCustomer = (e) => {
-    e.preventDefault();
-    if (!newCustomer.name || !newCustomer.phone) return;
-    const created = {
-      ...newCustomer,
-      id: Date.now().toString(),
-      dueDate: "Today"
-    };
-    setCustomers([created, ...customers]);
-    setNewCustomer({ name: "", phone: "", service: "", stage: "3-Day Install Check", notes: "" });
-    setShowAddForm(false);
-  };
-
-  const updateCadence = (id, newDue, newStage) => {
-    setCustomers(
-      customers.map((c) => (c.id === id ? { ...c, dueDate: newDue, stage: newStage || c.stage } : c))
-    );
-  };
-
-  const deleteCustomer = (id) => {
-    setCustomers(customers.filter((c) => c.id !== id));
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.3</h1>
-          <p className="text-xs text-blue-100">Technical Consultant Assistant</p>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.8</h1>
+          <p className="text-xs text-blue-100">Post-Sale Assistant</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPrivacyMode(!privacyMode)}
-            className="p-2 rounded-lg bg-blue-800/70 text-white hover:bg-blue-700"
-            title="Toggle Floor Privacy"
-          >
+          <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
             {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
-          <button
-            onClick={() => setShowKeyModal(true)}
-            className="p-2 rounded-lg bg-blue-800/70 text-white hover:bg-blue-700"
-            title="Set Gemini API Key"
-          >
+          <button onClick={() => setShowKeyModal(true)} className="p-2 rounded-lg bg-blue-800/70 text-white">
             <Key size={18} />
           </button>
         </div>
@@ -316,9 +229,6 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm space-y-4">
             <h2 className="font-bold text-base">Gemini API Key</h2>
-            <p className="text-xs text-slate-400">
-              Saved privately in your browser storage.
-            </p>
             <input
               type="password"
               defaultValue={apiKey}
@@ -327,18 +237,8 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
             />
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-slate-300"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => saveApiKey(document.getElementById("apiKeyInput").value)}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-[#00549A] text-white"
-              >
-                Save Key
-              </button>
+              <button onClick={() => setShowKeyModal(false)} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-slate-300">Cancel</button>
+              <button onClick={() => setApiKey(document.getElementById("apiKeyInput").value.trim()) || setShowKeyModal(false)} className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-[#00549A] text-white">Save</button>
             </div>
           </div>
         </div>
@@ -347,146 +247,82 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
       <main className="max-w-md mx-auto p-4 space-y-4">
         {activeTab === "clients" && (
           <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                  <Sparkles size={14} /> Shift Priority Queue
-                </span>
+            <div className="bg-slate-900 border border-blue-900/50 rounded-2xl p-3.5 space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                <ClipboardPaste size={13} /> Quick Log Customer Text
+              </span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={quickSmsInput}
+                  onChange={(e) => setQuickSmsInput(e.target.value)}
+                  placeholder="Paste text or notes..."
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
                 <button
-                  onClick={generateShiftBriefing}
-                  disabled={loadingAI}
-                  className="text-xs bg-[#00549A] hover:bg-blue-600 px-3 py-1.5 rounded-lg font-medium"
+                  onClick={parseAndLogSms}
+                  disabled={parsingSms}
+                  className="bg-[#00549A] px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap"
                 >
-                  {loadingAI ? "Analyzing..." : "Run Briefing"}
+                  {parsingSms ? "Saving..." : "Add to Queue"}
                 </button>
               </div>
-              {shiftBriefing ? (
-                <div className="text-xs text-slate-300 whitespace-pre-line leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                  {shiftBriefing}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Tap Run Briefing to let Gemini rank today&apos;s highest-value follow-ups and cross-sells.
-                </p>
-              )}
             </div>
 
             <div className="flex justify-between items-center">
-              <h2 className="font-semibold text-sm text-slate-300">
-                Active Follow-Ups ({customers.length})
-              </h2>
+              <h2 className="font-semibold text-sm text-slate-300">Active Queue ({customers.length})</h2>
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
-                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg text-blue-400 font-medium"
+                className="flex items-center gap-1.5 text-xs bg-slate-800 px-3 py-1.5 rounded-lg text-blue-400 font-medium"
               >
-                <UserPlus size={15} /> New Lead
+                <UserPlus size={15} /> New Customer
               </button>
             </div>
 
             {showAddForm && (
-              <form
-                onSubmit={addCustomer}
-                className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3"
-              >
-                <input
-                  placeholder="Customer Name"
-                  value={newCustomer.name}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
-                  className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
-                  required
-                />
-                <input
-                  placeholder="Phone Number (e.g. 7095550199)"
-                  value={newCustomer.phone}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
-                  className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
-                  required
-                />
-                <input
-                  placeholder="Sold Service (e.g. Fibe 3 Gbps + Mobility)"
-                  value={newCustomer.service}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, service: e.target.value })}
-                  className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
-                />
-                <textarea
-                  placeholder="Notes (install date, promised credits, family phones...)"
-                  value={newCustomer.notes}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
-                  className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm"
-                  rows={2}
-                />
-                <button
-                  type="submit"
-                  className="w-full bg-[#00549A] py-2 rounded-lg text-sm font-semibold"
-                >
-                  Save to Follow-Up Queue
-                </button>
+              <form onSubmit={addCustomer} className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3">
+                <input placeholder="Customer Name" value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm" required />
+                <input placeholder="Phone Number" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm" required />
+                
+                <label className="text-xs text-slate-400 block">Select Sale Type:</label>
+                <select value={newCustomer.service} onChange={(e) => setNewCustomer({ ...newCustomer, service: e.target.value })} className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm text-white font-medium">
+                  <option value="Mobility & BRS">Mobility & BRS (Both)</option>
+                  <option value="BRS Only">BRS Only (Internet/TV)</option>
+                  <option value="Mobility Only">Mobility Only (Phone/Plan)</option>
+                </select>
+
+                <select value={newCustomer.stage} onChange={(e) => setNewCustomer({ ...newCustomer, stage: e.target.value })} className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="3-Day Install Check">3-Day Install Check</option>
+                  <option value="30-Day 1st Bill Review">30-Day Bill Review</option>
+                  <option value="Completed">Follow-Up Completed</option>
+                </select>
+                <textarea placeholder="Notes..." value={newCustomer.notes} onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })} className="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm" rows={2} />
+                <button type="submit" className="w-full bg-[#00549A] py-2 rounded-lg text-sm font-semibold">Save Customer</button>
               </form>
             )}
 
             {customers.map((c) => (
-              <div
-                key={c.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
-              >
+              <div key={c.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="font-bold text-base text-white">{maskName(c.name)}</h3>
-                    <p className="text-xs text-blue-400 font-medium">{c.service}</p>
+                    <p className="text-xs text-blue-400 font-semibold">{c.service}</p>
                   </div>
                   <span className="text-[11px] bg-blue-950 text-blue-300 border border-blue-800 px-2.5 py-0.5 rounded-full">
-                    {c.dueDate} • {c.stage}
+                    {c.stage}
                   </span>
                 </div>
-
                 <p className="text-xs text-slate-400">{c.notes}</p>
-
                 <div className="flex items-center gap-1.5 pt-1 flex-wrap">
-                  <button
-                    onClick={() => updateCadence(c.id, "In 3 Days", "3-Day Install Check")}
-                    className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300"
-                  >
-                    +3d Check
-                  </button>
-                  <button
-                    onClick={() => updateCadence(c.id, "In 30 Days", "30-Day 1st Bill Review")}
-                    className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300"
-                  >
-                    +30d 1st Bill
-                  </button>
-                  <button
-                    onClick={() => updateCadence(c.id, "Completed", "Followed Up")}
-                    className="text-[11px] bg-emerald-950/80 text-emerald-300 px-2.5 py-1 rounded-md flex items-center gap-1"
-                  >
-                    <CheckCircle2 size={12} /> Done
-                  </button>
-                  <button
-                    onClick={() => deleteCustomer(c.id)}
-                    className="ml-auto text-slate-500 hover:text-red-400 p-1"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <button onClick={() => updateCadence(c.id, "In 3 Days", "3-Day Install Check")} className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300">+3d Check</button>
+                  <button onClick={() => updateCadence(c.id, "In 30 Days", "30-Day 1st Bill Review")} className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-300">+30d Bill</button>
+                  <button onClick={() => updateCadence(c.id, "Done", "Completed")} className="text-[11px] bg-emerald-950/80 text-emerald-300 px-2.5 py-1 rounded-md flex items-center gap-1"><CheckCircle2 size={12} /> Done</button>
+                  <button onClick={() => deleteCustomer(c.id)} className="ml-auto text-slate-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>
                 </div>
-
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
-                  <a
-                    href={`tel:${c.phone}`}
-                    className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 py-2 rounded-xl text-xs font-medium text-white"
-                  >
-                    <Phone size={14} /> Call
-                  </a>
-                  <a
-                    href={`sms:${c.phone}`}
-                    className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 py-2 rounded-xl text-xs font-medium text-white"
-                  >
-                    <MessageSquare size={14} /> Text
-                  </a>
-                  <button
-                    onClick={() => generateFollowUpMessage(c, "SMS")}
-                    className="flex items-center justify-center gap-1.5 bg-[#00549A] hover:bg-blue-600 py-2 rounded-xl text-xs font-semibold text-white"
-                  >
-                    <Sparkles size={14} /> AI Draft
-                  </button>
+                  <a href={`tel:${c.phone}`} className="flex items-center justify-center gap-1.5 bg-slate-800 py-2 rounded-xl text-xs font-medium text-white"><Phone size={14} /> Call</a>
+                  <a href={`sms:${c.phone}`} className="flex items-center justify-center gap-1.5 bg-slate-800 py-2 rounded-xl text-xs font-medium text-white"><MessageSquare size={14} /> Text</a>
+                  <button onClick={() => generatePostSaleText(c)} className="flex items-center justify-center gap-1.5 bg-[#00549A] py-2 rounded-xl text-xs font-semibold text-white"><Sparkles size={14} /> AI Follow-Up</button>
                 </div>
               </div>
             ))}
@@ -496,114 +332,34 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
         {activeTab === "scanner" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-bold text-sm flex items-center gap-2">
-                <FileText size={16} className="text-blue-400" /> Phone Context & Promo Matcher
-              </h2>
-              <p className="text-xs text-slate-400">
-                Paste text from your iPhone Shortcut, voice notes, or upload a photo of a dealer promo sheet to match offers with your customers.
-              </p>
-
-              <textarea
-                value={contextInput}
-                onChange={(e) => setContextInput(e.target.value)}
-                placeholder="Paste copied screen text, customer notes, or new Bell promo details here..."
-                rows={4}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white"
-              />
-
-              <label className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 py-2.5 rounded-xl text-xs font-medium cursor-pointer">
-                <Upload size={15} /> Upload Promo Photo or Note Screenshot
-                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-              </label>
-
-              {imageBase64 && (
-                <div className="text-xs text-emerald-400 flex items-center justify-between bg-slate-950 p-2 rounded-lg">
-                  <span>Image attached ready for Gemini scan</span>
-                  <button onClick={() => setImageBase64(null)} className="text-red-400 underline">
-                    Remove
-                  </button>
-                </div>
-              )}
-
-              <button
-                onClick={analyzePhoneContext}
-                disabled={loadingAI}
-                className="w-full bg-[#00549A] hover:bg-blue-600 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2"
-              >
-                <Sparkles size={15} />
-                {loadingAI ? "Scanning with Gemini..." : "Match Customers & Suggest Pitch"}
-              </button>
+              <h2 className="font-bold text-sm flex items-center gap-2"><FileText size={16} className="text-blue-400" /> Customer Note Analyzer</h2>
+              <textarea value={contextInput} onChange={(e) => setContextInput(e.target.value)} placeholder="Paste customer question or note..." rows={4} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
+              <button onClick={async () => {
+                setLoadingAI(true);
+                try {
+                  const res = await callGemini(`Analyze note: "${contextInput}". Suggest a helpful follow-up response.`);
+                  setContextResult(res);
+                } catch(e) { setContextResult(e.message); }
+                setLoadingAI(false);
+              }} className="w-full bg-[#00549A] py-2.5 rounded-xl text-xs font-semibold">Generate Response</button>
             </div>
-
-            {contextResult && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-                <h3 className="text-xs font-bold uppercase text-blue-400">AI Recommendations</h3>
-                <div className="text-xs text-slate-200 whitespace-pre-line leading-relaxed">
-                  {contextResult}
-                </div>
-              </div>
-            )}
+            {contextResult && <div className="bg-slate-900 p-4 rounded-2xl text-xs text-slate-200 whitespace-pre-line">{contextResult}</div>}
           </div>
         )}
 
         {activeTab === "outreach" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-bold text-sm">AI Message Composer</h2>
-
-              <select
-                value={selectedClient?.id}
-                onChange={(e) =>
-                  setSelectedClient(customers.find((c) => c.id === e.target.value))
-                }
-                className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-              >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} — {c.service}
-                  </option>
-                ))}
+              <h2 className="font-bold text-sm">Post-Sale Follow-Up Generator</h2>
+              <select value={selectedClient?.id} onChange={(e) => setSelectedClient(customers.find((c) => c.id === e.target.value))} className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white font-medium">
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.service}</option>)}
               </select>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => generateFollowUpMessage(selectedClient, "SMS")}
-                  disabled={loadingAI}
-                  className="flex-1 bg-[#00549A] py-2 rounded-xl text-xs font-semibold"
-                >
-                  Draft SMS Text
-                </button>
-                <button
-                  onClick={() => generateFollowUpMessage(selectedClient, "Voicemail Call Script")}
-                  disabled={loadingAI}
-                  className="flex-1 bg-slate-800 py-2 rounded-xl text-xs font-semibold"
-                >
-                  Draft Call Script
-                </button>
-              </div>
-
-              <textarea
-                value={draftedMessage}
-                onChange={(e) => setDraftedMessage(e.target.value)}
-                rows={5}
-                placeholder="Tap 'Draft SMS Text' above to generate a custom follow-up..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100"
-              />
-
+              <button onClick={() => generatePostSaleText(selectedClient)} className="w-full bg-[#00549A] py-2 rounded-xl text-xs font-semibold">Regenerate for this Sale Type</button>
+              <textarea value={draftedMessage} onChange={(e) => setDraftedMessage(e.target.value)} rows={5} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100" />
               {selectedClient && draftedMessage && (
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => navigator.clipboard.writeText(draftedMessage)}
-                    className="flex items-center justify-center gap-1.5 bg-slate-800 px-4 py-2.5 rounded-xl text-xs font-medium"
-                  >
-                    <Copy size={14} /> Copy
-                  </button>
-                  <a
-                    href={`sms:${selectedClient.phone}?&body=${encodeURIComponent(draftedMessage)}`}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl text-xs font-bold text-white"
-                  >
-                    <Send size={14} /> Open in iPhone Messages
-                  </a>
+                  <button onClick={() => navigator.clipboard.writeText(draftedMessage)} className="bg-slate-800 px-4 py-2.5 rounded-xl text-xs"><Copy size={14} /></button>
+                  <a href={`sms:${selectedClient.phone}?&body=${encodeURIComponent(draftedMessage)}`} className="flex-1 bg-emerald-600 py-2.5 rounded-xl text-xs font-bold text-center text-white"><Send size={14} /> Open in Messages & Send</a>
                 </div>
               )}
             </div>
@@ -611,34 +367,10 @@ Analyze the following notes/screenshot from my phone: "${contextInput}".
         )}
       </main>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex justify-around py-2.5 z-50 w-full">
-        <button
-          onClick={() => setActiveTab("clients")}
-          className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === "clients" ? "text-blue-400 font-semibold" : "text-slate-400"
-          }`}
-        >
-          <Calendar size={18} />
-          Queue
-        </button>
-        <button
-          onClick={() => setActiveTab("scanner")}
-          className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === "scanner" ? "text-blue-400 font-semibold" : "text-slate-400"
-          }`}
-        >
-          <Upload size={18} />
-          Phone Context
-        </button>
-        <button
-          onClick={() => setActiveTab("outreach")}
-          className={`flex flex-col items-center gap-1 text-[11px] ${
-            activeTab === "outreach" ? "text-blue-400 font-semibold" : "text-slate-400"
-          }`}
-        >
-          <MessageSquare size={18} />
-          AI Outreach
-        </button>
+      <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex justify-around py-2.5 z-50 w-full max-w-md mx-auto">
+        <button onClick={() => setActiveTab("clients")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "clients" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><Calendar size=undefined /> Queue</button>
+        <button onClick={() => setActiveTab("scanner")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "scanner" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><Upload size={18} /> Notes</button>
+        <button onClick={() => setActiveTab("outreach")} className={`flex flex-col items-center gap-1 text-[11px] ${activeTab === "outreach" ? "text-blue-400 font-semibold" : "text-slate-400"}`}><MessageSquare size={18} /> Follow-Up</button>
       </nav>
     </div>
   );
