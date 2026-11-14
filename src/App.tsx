@@ -15,10 +15,9 @@ import {
   Key,
   Trash2,
   Copy,
-  ClipboardPaste
+  ClipboardPaste,
+  Zap
 } from "lucide-react";
-
-const DEFAULT_API_KEY = "";
 
 const INITIAL_CUSTOMERS = [
   {
@@ -35,13 +34,9 @@ const INITIAL_CUSTOMERS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState("clients");
   const [privacyMode, setPrivacyMode] = useState(false);
-  const [apiKey, setApiKey] = useState(
-    () => localStorage.getItem("bell_gemini_key") || DEFAULT_API_KEY
-  );
-  const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem("bell_customers_v5");
+    const saved = localStorage.getItem("bell_customers_v6");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
@@ -55,23 +50,14 @@ export default function App() {
   const [showAddForm, setShowAddForm] = useState(false);
 
   const [quickSmsInput, setQuickSmsInput] = useState("");
-  const [parsingSms, setParsingSms] = useState(false);
-
-  const [loadingAI, setLoadingAI] = useState(false);
   const [selectedClient, setSelectedClient] = useState(INITIAL_CUSTOMERS[0]);
   const [draftedMessage, setDraftedMessage] = useState("");
   const [contextInput, setContextInput] = useState("");
   const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("bell_customers_v5", JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v6", JSON.stringify(customers));
   }, [customers]);
-
-  const saveApiKey = (newKey) => {
-    setApiKey(newKey.trim());
-    localStorage.setItem("bell_gemini_key", newKey.trim());
-    setShowKeyModal(false);
-  };
 
   const maskName = (name) => {
     if (!privacyMode) return name;
@@ -79,75 +65,23 @@ export default function App() {
     return parts.map((p, i) => (i === 0 ? p : p[0] + "***")).join(" ");
   };
 
-  const callGemini = async (promptText) => {
-    const activeKey = (apiKey || DEFAULT_API_KEY || "").trim();
-    if (!activeKey) {
-      setShowKeyModal(true);
-      throw new Error("Missing API Key. Tap the Key icon in the top-right.");
+  // Instant template generation (0 delay, zero AI freezing)
+  const generateInstantTemplate = (client) => {
+    setSelectedClient(client);
+    setActiveTab("outreach");
+
+    const name = client.name.split(" ")[0];
+    let body = "";
+
+    if (client.service === "Mobility & BRS") {
+      body = `Hi ${name}! Just checking in to see how everything is working with your new mobility plan/device and your home internet/TV setup. Let me know if you have any questions! \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+    } else if (client.service === "BRS Only") {
+      body = `Hi ${name}! Just wanted to follow up on your home internet and TV install. How is the Wi-Fi speed and setup working out for you? \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+    } else {
+      body = `Hi ${name}! Just checking in to see how you're liking your new mobile device and plan. Everything working great with your coverage? \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
     }
 
-    const endpoint =
-      "https:" +
-      "//generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
-      encodeURIComponent(activeKey);
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }]
-      })
-    });
-
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  };
-
-  const parseAndLogSms = async () => {
-    if (!quickSmsInput.trim()) return;
-    setParsingSms(true);
-    try {
-      const prompt = `Analyze this incoming customer text: "${quickSmsInput}".
-My current customer list is: ${JSON.stringify(customers)}.
-Return ONLY a valid JSON object in this exact format (no markdown blocks):
-{
-  "matchedCustomerId": "ID if matching customer, or null",
-  "newName": "Name if new customer, or null",
-  "newPhone": "Phone if new customer, or null",
-  "serviceType": "Mobility & BRS, BRS Only, or Mobility Only",
-  "summaryNote": "1 short sentence summary"
-}`;
-      const reply = await callGemini(prompt);
-      const cleaned = reply.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-
-      if (parsed.matchedCustomerId) {
-        setCustomers(
-          customers.map((c) =>
-            c.id === parsed.matchedCustomerId
-              ? { ...c, notes: `[SMS]: ${parsed.summaryNote} — ` + c.notes }
-              : c
-          )
-        );
-      } else {
-        const created = {
-          id: Date.now().toString(),
-          name: parsed.newName || "New Customer",
-          phone: parsed.newPhone || "7095550000",
-          service: parsed.serviceType || "Mobility & BRS",
-          stage: "3-Day Install Check",
-          dueDate: "Today",
-          notes: parsed.summaryNote
-        };
-        setCustomers([created, ...customers]);
-      }
-      setQuickSmsInput("");
-    } catch (err) {
-      alert("Could not parse message: " + err.message);
-    } finally {
-      setParsingSms(false);
-    }
+    setDraftedMessage(body);
   };
 
   const addCustomer = (e) => {
@@ -179,93 +113,53 @@ Return ONLY a valid JSON object in this exact format (no markdown blocks):
     setCustomers(customers.filter((c) => c.id !== id));
   };
 
-  const generatePostSaleText = async (client) => {
-    setSelectedClient(client);
-    setActiveTab("outreach");
-    setLoadingAI(true);
-    setDraftedMessage("Drafting post-sale follow-up...");
-    try {
-      let customInstructions = "";
-      if (client.service === "Mobility & BRS") {
-        customInstructions = "Mention checking in on both their new mobility plan/device and their home internet/TV (BRS) setup.";
-      } else if (client.service === "BRS Only") {
-        customInstructions = "Mention checking in specifically on their home internet/TV (BRS) setup and Wi-Fi performance.";
-      } else {
-        customInstructions = "Mention checking in specifically on their new mobile device, network coverage, and cellular plan.";
-      }
-
-      const reply = await callGemini(
-        `Write a friendly, polite, non-pushy post-sale follow-up text message from a Bell Technical Sales Consultant to customer ${client.name}. 
-Sale Type: ${client.service}. 
-${customInstructions}
-CRITICAL REQUIREMENT: Sign off explicitly as "Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4".
-Keep the entire message concise and natural.`
-      );
-      setDraftedMessage(reply.trim());
-    } catch (err) {
-      setDraftedMessage("Error: " + err.message);
-    } finally {
-      setLoadingAI(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v1.9.2</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v2.0</h1>
           <p className="text-xs text-blue-100">Ash — 34 Pippy Place</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
-            {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
-          </button>
-          <button onClick={() => setShowKeyModal(true)} className="p-2 rounded-lg bg-blue-800/70 text-white">
-            <Key size={18} />
-          </button>
-        </div>
+        <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
+          {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
       </header>
-
-      {showKeyModal && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm space-y-4">
-            <h2 className="font-bold text-base">Gemini API Key</h2>
-            <input
-              type="password"
-              defaultValue={apiKey}
-              placeholder="Paste AIza... key here"
-              id="apiKeyInput"
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-            />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowKeyModal(false)} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-slate-300">Cancel</button>
-              <button onClick={() => setApiKey(document.getElementById("apiKeyInput").value.trim()) || setShowKeyModal(false)} className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-[#00549A] text-white">Save</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <main className="max-w-md mx-auto p-4 space-y-4">
         {activeTab === "clients" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-blue-900/50 rounded-2xl p-3.5 space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                <ClipboardPaste size={13} /> Quick Log Customer Text
+                <ClipboardPaste size={13} /> Quick Log Customer
               </span>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={quickSmsInput}
                   onChange={(e) => setQuickSmsInput(e.target.value)}
-                  placeholder="Paste text or notes..."
+                  placeholder="Customer Name & Details..."
                   className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                 />
                 <button
-                  onClick={parseAndLogSms}
-                  disabled={parsingSms}
+                  onClick={() => {
+                    if (!quickSmsInput.trim()) return;
+                    setCustomers([
+                      {
+                        id: Date.now().toString(),
+                        name: quickSmsInput,
+                        phone: "7095550000",
+                        service: "Mobility & BRS",
+                        stage: "3-Day Install Check",
+                        dueDate: "Today",
+                        notes: "Quick logged from floor."
+                      },
+                      ...customers
+                    ]);
+                    setQuickSmsInput("");
+                  }}
                   className="bg-[#00549A] px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap"
                 >
-                  {parsingSms ? "Saving..." : "Add to Queue"}
+                  Add Lead
                 </button>
               </div>
             </div>
@@ -323,7 +217,7 @@ Keep the entire message concise and natural.`
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
                   <a href={`tel:${c.phone}`} className="flex items-center justify-center gap-1.5 bg-slate-800 py-2 rounded-xl text-xs font-medium text-white"><Phone size={14} /> Call</a>
                   <a href={`sms:${c.phone}`} className="flex items-center justify-center gap-1.5 bg-slate-800 py-2 rounded-xl text-xs font-medium text-white"><MessageSquare size={14} /> Text</a>
-                  <button onClick={() => generatePostSaleText(c)} className="flex items-center justify-center gap-1.5 bg-[#00549A] py-2 rounded-xl text-xs font-semibold text-white"><Sparkles size={14} /> AI Follow-Up</button>
+                  <button onClick={() => generateInstantTemplate(c)} className="flex items-center justify-center gap-1.5 bg-[#00549A] py-2 rounded-xl text-xs font-semibold text-white"><Zap size={14} /> Instant Draft</button>
                 </div>
               </div>
             ))}
@@ -333,16 +227,11 @@ Keep the entire message concise and natural.`
         {activeTab === "scanner" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-bold text-sm flex items-center gap-2"><FileText size={16} className="text-blue-400" /> Customer Note Analyzer</h2>
-              <textarea value={contextInput} onChange={(e) => setContextInput(e.target.value)} placeholder="Paste customer question or note..." rows={4} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
-              <button onClick={async () => {
-                setLoadingAI(true);
-                try {
-                  const res = await callGemini(`Analyze note: "${contextInput}". Suggest a helpful follow-up response signed by Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4.`);
-                  setContextResult(res);
-                } catch(e) { setContextResult(e.message); }
-                setLoadingAI(false);
-              }} className="w-full bg-[#00549A] py-2.5 rounded-xl text-xs font-semibold">Generate Response</button>
+              <h2 className="font-bold text-sm flex items-center gap-2"><FileText size={16} className="text-blue-400" /> Quick Notes</h2>
+              <textarea value={contextInput} onChange={(e) => setContextInput(e.target.value)} placeholder="Type customer notes here..." rows={4} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
+              <button onClick={() => {
+                setContextResult(`Follow-up saved for notes: "${contextInput}"\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`);
+              }} className="w-full bg-[#00549A] py-2.5 rounded-xl text-xs font-semibold">Format Note</button>
             </div>
             {contextResult && <div className="bg-slate-900 p-4 rounded-2xl text-xs text-slate-200 whitespace-pre-line">{contextResult}</div>}
           </div>
@@ -351,15 +240,19 @@ Keep the entire message concise and natural.`
         {activeTab === "outreach" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-bold text-sm">Post-Sale Follow-Up Generator</h2>
-              <select value={selectedClient?.id} onChange={(e) => setSelectedClient(customers.find((c) => c.id === e.target.value))} className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white font-medium">
+              <h2 className="font-bold text-sm">Post-Sale Message Generator</h2>
+              <select value={selectedClient?.id} onChange={(e) => {
+                const found = customers.find(c => c.id === e.target.value);
+                if (found) generateInstantTemplate(found);
+              }} className="w-full bg-slate-800 rounded-xl px-3 py-2 text-xs text-white font-medium">
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.service}</option>)}
               </select>
-              <button onClick={() => generatePostSaleText(selectedClient)} className="w-full bg-[#00549A] py-2 rounded-xl text-xs font-semibold">Regenerate Post-Sale Text</button>
-              <textarea value={draftedMessage} onChange={(e) => setDraftedMessage(e.target.value)} rows={5} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100" />
+              
+              <textarea value={draftedMessage} onChange={(e) => setDraftedMessage(e.target.value)} rows={6} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 leading-relaxed" />
+              
               {selectedClient && draftedMessage && (
                 <div className="flex gap-2">
-                  <button onClick={() => navigator.clipboard.writeText(draftedMessage)} className="bg-slate-800 px-4 py-2.5 rounded-xl text-xs"><Copy size={14} /></button>
+                  <button onClick={() => navigator.clipboard.writeText(draftedMessage)} className="bg-slate-800 px-4 py-2.5 rounded-xl text-xs font-medium"><Copy size={14} /></button>
                   <a href={`sms:${selectedClient.phone}?&body=${encodeURIComponent(draftedMessage)}`} className="flex-1 bg-emerald-600 py-2.5 rounded-xl text-xs font-bold text-center text-white"><Send size={14} /> Open in Messages & Send</a>
                 </div>
               )}
