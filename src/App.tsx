@@ -12,7 +12,6 @@ import {
   FileText,
   Send,
   CheckCircle2,
-  Key,
   Trash2,
   Copy,
   ClipboardPaste,
@@ -36,7 +35,7 @@ export default function App() {
   const [privacyMode, setPrivacyMode] = useState(false);
 
   const [customers, setCustomers] = useState(() => {
-    const saved = localStorage.getItem("bell_customers_v6");
+    const saved = localStorage.getItem("bell_customers_v7");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
   });
 
@@ -56,7 +55,7 @@ export default function App() {
   const [contextResult, setContextResult] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("bell_customers_v6", JSON.stringify(customers));
+    localStorage.setItem("bell_customers_v7", JSON.stringify(customers));
   }, [customers]);
 
   const maskName = (name) => {
@@ -65,7 +64,6 @@ export default function App() {
     return parts.map((p, i) => (i === 0 ? p : p[0] + "***")).join(" ");
   };
 
-  // Instant template generation (0 delay, zero AI freezing)
   const generateInstantTemplate = (client) => {
     setSelectedClient(client);
     setActiveTab("outreach");
@@ -74,11 +72,11 @@ export default function App() {
     let body = "";
 
     if (client.service === "Mobility & BRS") {
-      body = `Hi ${name}! Just checking in to see how everything is working with your new mobility plan/device and your home internet/TV setup. Let me know if you have any questions! \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just checking in to see how everything is working with your new mobility plan/device and your home internet/TV setup. Let me know if you have any questions!\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
     } else if (client.service === "BRS Only") {
-      body = `Hi ${name}! Just wanted to follow up on your home internet and TV install. How is the Wi-Fi speed and setup working out for you? \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just wanted to follow up on your home internet and TV install. How is the Wi-Fi speed and setup working out for you?\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
     } else {
-      body = `Hi ${name}! Just checking in to see how you're liking your new mobile device and plan. Everything working great with your coverage? \n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
+      body = `Hi ${name}, Ash here from Bell at Pippy Place! Just checking in to see how you're liking your new mobile device and plan. Everything working great with your coverage?\n\n- Ash from Bell at 34 Pippy Place, St. John's, NL A1B 3X4`;
     }
 
     setDraftedMessage(body);
@@ -117,7 +115,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 font-sans">
       <header className="bg-[#00549A] px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v2.0</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">Bell Sales Hub v2.0.1</h1>
           <p className="text-xs text-blue-100">Ash — 34 Pippy Place</p>
         </div>
         <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 rounded-lg bg-blue-800/70 text-white">
